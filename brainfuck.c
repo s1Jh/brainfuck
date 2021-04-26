@@ -5,7 +5,7 @@
  *
  * 17.4.2021 / started the project, wrote pretty much all the code, some bugs still preventing functionality
  * 25.5.2021 / fixed up all the bugs, tested all commands, first sucessful execution of Hello world!
- * 26.5.2021 / refactored the argument parser a touch, implemented tape modes
+ * 26.5.2021 / refactored the argument parser a touch, implemented tape modes, fixed a buffer overrun issue in reads
  *
  * idk, do whatever the hell you want license
  * 
@@ -355,8 +355,12 @@ int execute()
 			printf("-> %d\n", tape[data_ctr]);
 			break;
 		case ',':
-			scanf("%i", (int*)&tape[data_ctr]);
+			{
+			int val = 0;
+			scanf("%i", &val);
+			tape[data_ctr] = (unsigned char)val;
 			break;
+			}
 			// since we auto increment after we are done processing
 			// we will jump directly to the characters here and
 			// let the code above move us to where we're actually 
@@ -465,12 +469,11 @@ int execute()
 		}
 		if (had_op && debug_log)
 		{
-			printf("@%i:\tins: %c (0x%x)\tdata: 0x%x\t\t|ctrs: d:0x%x\ti:0x%x\n", 
-				ins_ctr, program[ins_ctr], program[ins_ctr], tape[data_ctr], ins_ctr, data_ctr
+			printf("@%i:\tins: %c (0x%x)\tdata: 0x%x\t| ctrs: d:0x%x\ti:0x%x\n", 
+				ins_ctr, (char)program[ins_ctr], (char)program[ins_ctr], tape[data_ctr], data_ctr, ins_ctr
 			);
 		}
 	}
 
 	return status;
 }
-

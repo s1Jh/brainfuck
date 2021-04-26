@@ -10,5 +10,5 @@ Arguments:
   -t/--tape [int]     Sets the emulated tape size (default: 30000).
   -p/--program [int]  Sets the emulated program storage size (default: 30000).
   -d/--debug          Enables program debugging.
-  -tm/--tape-mode     Sets how the tape behaves when programs index over the specified limit.
+  -tm/--tape-mode     Sets how the tape behaves when programs index over the specified limit. Acceptable values are "terminate", "wrap" and "clamp".
 ```

@@ -3,7 +3,7 @@ C brainfuck interpreter I made in 2 days, it's not the best piece of work ever, 
 
 ## usage (ripped straight from the program):
 ```
-Usage: brainfuck \[arguments\] FILE
+Usage: brainfuck [arguments] FILE
 
 Arguments:
   -h/--help           Displays this message.

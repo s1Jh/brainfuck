@@ -459,7 +459,7 @@ int execute()
 				status %= tape_size;
 				break;
 			case DM_Clamp:
-				data_ctr = 0;
+				data_ctr = tape_size - 1;
 				break;
 			default:
 			case DM_Terminate:

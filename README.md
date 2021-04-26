@@ -7,8 +7,8 @@ Usage: brainfuck [arguments] FILE
 
 Arguments:
   -h/--help           Displays this message.
-  -t/--tape [int]     Sets the emulated tape size (default: %i).
-  -p/--program [int]  Sets the emulated program storage size (default: %i).
+  -t/--tape [int]     Sets the emulated tape size (default: 30000).
+  -p/--program [int]  Sets the emulated program storage size (default: 30000).
   -d/--debug          Enables program debugging.
   -tm/--tape-mode     Sets how the tape behaves when programs index over the specified limit.
 ```

@@ -3,11 +3,23 @@
  *
  * Made by sijh.
  *
- * 17.4.2021 / started the project, wrote pretty much all the code, some bugs still preventing functionality
- * 25.5.2021 / fixed up all the bugs, tested all commands, first sucessful execution of Hello world!
- * 26.5.2021 / refactored the argument parser a touch, implemented tape modes, fixed a buffer overrun issue in reads
+ * 17.4.2021:
+ *      started the project, wrote pretty much all the code, some bugs still preventing functionality
  *
- * idk, do whatever the hell you want license
+ * 25.5.2021:
+ *      fixed up all the bugs, tested all commands, first sucessful execution of Hello world!
+ *
+ * 26.5.2021:
+ *      refactored the argument parser a touch, implemented tape modes, fixed a buffer overrun issue in reads
+ *
+ * 08.5.2021 - 15.5.2021:
+ *      added ascii image output, program now quits when it reaches a \0 character in the program tape, reorganizations
+ *      5% performance imporovement in the mandelbro algorithm (average 57 seconds instead of 60) thanks to the early exit at program end
+ *      refactored find_matching_brace a bit
+ *
+ * Compile with "gcc -Wall -O3 -o brainfuck brainfuck.c".
+ *
+ * idk, do whatever you want license
  * 
  * :)
  */
@@ -16,21 +28,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 #define PROGRAM_SIZE 30000
 #define TAPE_SIZE 30000
+#define IMG_WIDTH 128
+#define IMG_HEIGHT 64
 
 #define VER_MAJOR 1 
-#define VER_MINOR 0
+#define VER_MINOR 1
 
-#define COMP_ARG(x, y) if (strcmp(arg, x ) == 0 || strcmp(arg, y ) == 0)
+#define COMP_ARG(ar, x, y) if (strcmp(ar, x ) == 0 || strcmp(ar, y ) == 0)
 
 // enums
 typedef enum DataMode
 {
-	DM_Wrap,	// when we reach past the data buffer, wrap around 
-	DM_Terminate,	// when we reach past the data buffer, halt the program
-	DM_Clamp 	// when we reach past the data buffer, stay at the last or first index
+	DM_Wrap,	  // when we reach past the data buffer, wrap around
+	DM_Terminate, // when we reach past the data buffer, halt the program
+	DM_Clamp 	  // when we reach past the data buffer, stay at the last or first index
 } e_datamode;
 
 typedef enum SearchDirection
@@ -46,28 +61,42 @@ int setup_env();
 void com_exit(int status);
 void parse_arguments(int argc, char **argv);
 void print_help();
-int find_matching_brace(unsigned char* str, int start, int count, e_searchdir dir);
+int find_matching_brace(unsigned char* str, int start, e_searchdir dir);
 int load_program(char* path);
+
+void out_img();
+void out(char v);
+char in();
 
 // globals
 unsigned char *tape;
 unsigned char *program;
 int data_ctr;
 int ins_ctr;
+
 char* program_path;
 int debug_log = 0;
 e_datamode tape_mode = DM_Wrap;
 int tape_size = TAPE_SIZE;
 int program_size = PROGRAM_SIZE;
 
+int image_mode = 0;
+int image_w = IMG_WIDTH;
+int image_h = IMG_HEIGHT;
+int image_a;
+char* image;
+
 // function definitions
-int find_matching_brace(unsigned char *str, int start, int count, e_searchdir dir)
+int find_matching_brace(unsigned char *str, int start, e_searchdir dir)
 {
 	int lb = 0;
 	int rb = 0;
 	
-	count = count + start * (int)dir;
-	for (int i = start; start != count; i += (int)dir)
+	//count = count + start * (int)dir;
+
+    int end = dir == SD_Forward ? program_size : 0;
+
+	for (int i = start; start != end; i += (int)dir)
 	{
 		if (str[i] == '[') lb++;
 		if (str[i] == ']') rb++;
@@ -84,7 +113,7 @@ int find_matching_brace(unsigned char *str, int start, int count, e_searchdir di
 
 int main(int argc, char **argv)
 {
-	printf("Brainfuck interpreter v%i.%i.\n", VER_MAJOR, VER_MINOR);
+	printf("Brainfuck interpreter v%i.%i\n", VER_MAJOR, VER_MINOR);
 	printf("Created by sijh, 17.04.2021, refer to brainfuck --help for usage.\n");
 	
 	parse_arguments(argc, argv);
@@ -92,11 +121,14 @@ int main(int argc, char **argv)
 	int err = setup_env();
 	if (err != 0x0)
 	{
-		printf("Non fatal error during setup: %i\n", err);
+		printf("Non fatal error during setup: %i.\n", err);
 	}
 
 	int bfprog_status = execute();
-	printf("Program halted with code %x\n", bfprog_status);
+
+	printf("Program halted with code %x.\n", bfprog_status);
+
+    out_img();
 
 	com_exit(bfprog_status);	
 }
@@ -111,7 +143,7 @@ int load_program(char* path)
 
 	if (f == NULL)
 	{
-		printf("[CRITICAL ERROR]: Couldn't open file %s\n", path);
+		printf("[CRITICAL ERROR]: Couldn't open file %s.\n", path);
 		com_exit(0x0401);
 	}
 
@@ -121,7 +153,7 @@ int load_program(char* path)
 
 	if (size > program_size)
 	{
-		printf("[CRITICAL ERROR]: Can't fit program into memory, program: %i, memory: %i.\n", size, program_size);
+		printf("[CRITICAL ERROR]: Can't fit program into memory, program: %iB, memory: %iB.\n", size, program_size);
 		com_exit(0x0402);
 	}
 
@@ -129,7 +161,7 @@ int load_program(char* path)
 
 	if (result != size)
 	{
-		printf("[WARNING]: Read the incorrect amount of bytes, read: %i, expected: %i.\n", result, size);
+		printf("[WARNING]: Read the incorrect amount of bytes, read: %iB, expected: %iB.\n", result, size);
 		status = 0x0403;
 	}
 	fclose(f);
@@ -140,7 +172,6 @@ int load_program(char* path)
 void print_help()
 {
 	printf(
-		"Brainfuck interpreter v%i.%i.\n"
 		"Created by sijh, last modified 17.4.2021\n"
 		"Usage: brainfuck [arguments] FILE\n"
 		"Arguments:\n"
@@ -148,8 +179,11 @@ void print_help()
 		"\t-t/--tape [int]\tSets the emulated tape size (default: %i).\n"
 		"\t-p/--program [int]\tSets the emulated program storage size (default: %i).\n"
 		"\t-d/--debug\t Enables program debugging.\n"
-		"\t-tm/--tape-mode\t Sets how the tape behaves when programs index over the specified limit.\n",
-		VER_MAJOR, VER_MINOR, TAPE_SIZE, PROGRAM_SIZE
+		"\t-tm/--tape-mode\t Sets how the tape behaves when programs index over the specified limit.\n"
+		"\t-i/--image\t\t\tEnables image output.\n"
+		"\t-iw/--image-width [int]\t\tSets the width of the output ascii image, also enables image mode (default: %i).\n"
+		"\t-ih/--image-height [int]\tSets the height of the output ascii image, also enables image mode (default: %i).\n",
+		TAPE_SIZE, PROGRAM_SIZE, IMG_WIDTH, IMG_HEIGHT
 	);
 }
 
@@ -160,14 +194,13 @@ void parse_arguments(int argc, char **argv)
 		char* arg = argv[i];
 
 		// help switch
-		COMP_ARG("-h", "--help")
+		COMP_ARG(arg, "-h", "--help")
 		{
 			print_help();
 			com_exit(0x0000);
-			goto skip;
 		}
 		// tape size switch
-		COMP_ARG("-t", "--tape")
+		COMP_ARG(arg, "-t", "--tape")
 		{
 			if (i + 1 < argc)
 			{
@@ -178,7 +211,7 @@ void parse_arguments(int argc, char **argv)
 
 				if (result == 0)
 				{
-					printf("Tape size parameter either malformed or 0, defaulting to %i\n", TAPE_SIZE);
+					printf("Tape size parameter either malformed or 0, defaulting to %i.\n", TAPE_SIZE);
 				}
 				else
 				{
@@ -188,12 +221,11 @@ void parse_arguments(int argc, char **argv)
 			}
 			else 
 			{
-				printf("Tape size switch specified, but no value passed in\n");
+				printf("Tape size switch specified, but no value passed in.\n");
 			}
-			goto skip;	
 		}
 		// program size switch
-		COMP_ARG("-p", "--program")
+		COMP_ARG(arg, "-p", "--program")
 		{
 			if (i + 1 < argc)
 			{
@@ -204,7 +236,7 @@ void parse_arguments(int argc, char **argv)
 
 				if (result == 0)
 				{
-					printf("Program size parameter either malformed or 0, defaulting to %i\n", TAPE_SIZE);
+					printf("Program size parameter either malformed or 0, defaulting to %i.\n", TAPE_SIZE);
 				}
 				else
 				{
@@ -214,17 +246,68 @@ void parse_arguments(int argc, char **argv)
 			}
 			else 
 			{
-				printf("Program size switch specified, but no value passed in\n");
+				printf("Program size switch specified, but no value passed in.\n");
 			}
-
-			goto skip;
 		}
-		COMP_ARG("-d", "--debug")
+		COMP_ARG(arg, "-iw", "--image-width")
+		{
+			image_mode = 1;
+			if (i + 1 < argc)
+			{
+				i++;
+				char *l = argv[i];
+
+				int result = atoi(l);
+
+				if (result == 0)
+				{
+					printf("Image width parameter either malformed or 0, defaulting to %i.\n", IMG_WIDTH);
+				}
+				else
+				{
+					printf("Setting image width to %i\n", result);
+					image_w = result;
+				}
+			}
+			else
+			{
+				printf("Image width switch specified, but no value passed in.\n");
+			}
+		}
+		COMP_ARG(arg, "-ih", "--image-height")
+		{
+			image_mode = 1;
+			if (i + 1 < argc)
+			{
+				i++;
+				char *l = argv[i];
+
+				int result = atoi(l);
+
+				if (result == 0)
+				{
+					printf("Image height parameter either malformed or 0, defaulting to %i.\n", IMG_HEIGHT);
+				}
+				else
+				{
+					printf("Setting image height to %i\n", result);
+					image_h = result;
+				}
+			}
+			else
+			{
+				printf("Image height switch specified, but no value passed in.\n");
+			}
+		}
+		COMP_ARG(arg, "-d", "--debug")
 		{
 			debug_log = 1;
-			goto skip;
 		}
-		COMP_ARG("-tm", "--tape-mode")
+		COMP_ARG(arg, "-i", "--image")
+		{
+			image_mode = 1;
+		}
+		COMP_ARG(arg, "-tm", "--tape-mode")
 		{
 			if (i + 1 < argc)
 			{
@@ -233,31 +316,35 @@ void parse_arguments(int argc, char **argv)
 
 				if (strcmp(mod, "wrap") == 0)
 				{
-					printf("Setting tape mode to wrap\n");
+					printf("Setting tape mode to wrap.\n");
 					tape_mode = DM_Wrap;
 				}
 				else if (strcmp(mod, "clamp") == 0)
 				{
-					printf("Setting tape mode to stop at overrun\n");
+					printf("Setting tape mode to stop at overrun.\n");
 					tape_mode = DM_Clamp;
 				}
 				else if (strcmp(mod, "terminate") == 0)
 				{
-					printf("Setting tape mode to terminate on overrun\n");
+					printf("Setting tape mode to terminate on overrun.\n");
 					tape_mode = DM_Terminate;
 				}
 			}
-			else 
+			else
 			{
-				printf("Tape mode switch specified, but no value passed in\n");
+				printf("Tape mode switch specified, but no value passed in.\n");
 			}
-
-			goto skip;
 		}
-		// by now all switches have been exepended, so the argument is the file name
-		program_path = arg;
-skip:
-		continue;
+		// the last switch is always the program name
+		if (i == argc - 1 && i != 0)
+		{
+			program_path = arg;
+		}
+	}
+	if (program_path == NULL)
+	{
+		printf("No program path passed in.\n");
+		com_exit(0x0005);
 	}
 }
 
@@ -295,6 +382,30 @@ int setup_env()
 	data_ctr = 0;
 	ins_ctr = 0;
 
+    // if image mode is enabled, initialize relate variables
+    if (image_mode == 1)
+	{
+		if (image_w <= 0)
+		{
+			printf("[CRITICAL ERROR]: Image width set to zero or less\n");
+			com_exit(0x0105);
+		}
+		if (image_h <= 0)
+		{
+			printf("[CRITICAL ERROR]: Image height set to zero or less\n");
+			com_exit(0x0106);
+		}
+
+		image = (char*)calloc(image_w * image_h, sizeof(char));
+		if (image == NULL)
+		{
+			printf("[CRITICAL ERROR]: Could not allocate space for the image\n");
+			com_exit(0x0107);
+		}
+
+		image_a = 0;
+	}
+
 	int err = load_program(program_path);
 
 	if (err != 0x0)
@@ -309,6 +420,7 @@ void com_exit(int status)
 {
 	free(tape);
 	free(program);
+	free(image);
 
 	if (status != 0x0)
 	{
@@ -329,7 +441,7 @@ int execute()
 		"========================================================\n", 
 		program
 	);
-
+	int time = clock();
 	int had_op;
 	while (status == 1)
 	{
@@ -339,6 +451,10 @@ int execute()
 
 		switch(program[ins_ctr])
 		{
+        default:
+			had_op = 0;
+			break;
+
 		case '>':
 			data_ctr++;
 			break;
@@ -352,15 +468,11 @@ int execute()
 			tape[data_ctr]--;
 			break;
 		case '.':
-			printf("-> %d\n", tape[data_ctr]);
+			out(tape[data_ctr]);
 			break;
 		case ',':
-			{
-			int val = 0;
-			scanf("%i", &val);
-			tape[data_ctr] = (unsigned char)val;
+			tape[data_ctr] = in();
 			break;
-			}
 			// since we auto increment after we are done processing
 			// we will jump directly to the characters here and
 			// let the code above move us to where we're actually 
@@ -369,12 +481,7 @@ int execute()
 		{
 			if (tape[data_ctr] == 0)
 			{
-				int result = find_matching_brace(
-					program,
-				        ins_ctr,
-					program_size - ins_ctr,
-					SD_Forward
-				);
+				int result = find_matching_brace(program, ins_ctr, SD_Forward);
 
 				if (result == -1)
 				{
@@ -393,12 +500,7 @@ int execute()
 		case ']':
 			if (tape[data_ctr] != 0)
 			{
-				int result = find_matching_brace(
-					program,
-				       	ins_ctr,
-					ins_ctr - 1,
-					SD_Backward
-				);
+				int result = find_matching_brace(program, ins_ctr, SD_Backward);
 
 				if (result == -1)
 				{
@@ -413,9 +515,10 @@ int execute()
 				}
 			}
 			break;
-		default:
-			had_op = 0;
-			break;
+
+        case 0:
+            status = 0x0;
+            break;
 		}
 
 		// done processing, next instruction
@@ -474,6 +577,46 @@ int execute()
 			);
 		}
 	}
+	
+	time = clock() - time;
+
+	printf("========================================================\nTook %i clicks, %f seconds.\n", time, ((float)time) / CLOCKS_PER_SEC);
 
 	return status;
+}
+
+void out_img()
+{
+	if (image_mode == 1)
+	{
+		printf("Image:\n========================================================\n");
+		for (int i = 0; i < image_w * image_h; i++)
+		{
+			printf("%c", image[i]);
+		}
+		printf("\n========================================================\n");
+	}
+}
+
+void out(char v)
+{
+	if (image_mode == 1)
+	{
+		image_a %= image_w * image_h;
+		image[image_a] = v;
+		image_a++;
+	}
+	else
+	{
+		printf("-> %d\n", v);
+	}
+}
+
+char in()
+{
+	int val = 0;
+	printf("<- ");
+    scanf("%i", &val);
+	// make sure to do a narrowing conversion, since we expect an 8 bit value
+	return (unsigned char)val;
 }
